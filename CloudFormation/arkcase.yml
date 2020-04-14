@@ -5,6 +5,47 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: >
   Deploy ArkCase
 
+Mappings:
+  # Note: the other regions are restricted somehow, or at least 
+  # I can't list instances there.
+  # TODO: get the Amazon Linux 2 images from other regions.
+  # TODO: Also, I can't set a default value for an image ID parameter, since I 
+  #       get an error that Default parameters must be of type String.
+  RegionMap:
+    us-east-1:
+      WinServer2019Base: "ami-09d496c26aa745869"
+      AmazonLinux2: "ami-0323c3dd2da7fb37d"
+    us-east-2:    
+      WinServer2019Base: "ami-07f3715a1f6dbb6d9"
+    us-west-1:
+      WinServer2019Base: "ami-0037082364387ada7"
+    us-west-2:
+      WinServer2019Base: "ami-0f467e652b07f3676"
+    ca-central-1:
+      WinServer2019Base: "ami-0711d40e09bd4226e"
+    eu-north-1:
+      WinServer2019Base: "ami-0007ae7a7ac1b2b23"
+    eu-west-1:
+      WinServer2019Base: "ami-0aaada7cbb0d829fc"
+    eu-west-2:
+      WinServer2019Base: "ami-0f8d0019ef655a6a6"
+    eu-west-3:
+      WinServer2019Base: "ami-075f447b9d38f57e6"
+    eu-central-1:
+      WinServer2019Base: "ami-0f98c0d90570d0b21"
+    ap-northeast-1:
+      WinServer2019Base: "ami-0fea4fd24c0f6d0be"
+    ap-northeast-2:
+      WinServer2019Base: "ami-0f9d1de69243b61df"
+    ap-southeast-1:
+      WinServer2019Base: "ami-0f2866fc0244e2798"
+    ap-southeast-2:
+      WinServer2019Base: "ami-0df33e36ca53be643"
+    ap-south-1:
+      WinServer2019Base: "ami-0a647b8642eaade60"
+    sa-east-1:
+      WinServer2019Base: "ami-005d7fbc589aaa6a8"
+
 Parameters:
   Env:
     Type: String
@@ -517,10 +558,13 @@ Resources:
   #EC2 instances
 
   # private key and key pair, via cfn-secret-provider, https://github.com/binxio/cfn-secret-provider
+  # NOTE these don't seem to work with the AWS Console code that decrypts the 
+  # RDP password.  I had to create a key pair in the ordinary way via the 
+  # AWS Console.  
   ArkPrivateKey:
     Type: Custom::RSAKey
     Properties:
-      Name: /demo/private-key
+      Name: /arkcase/ark-private-key
       KeyAlias: alias/aws/ssm
       ReturnSecret: true
       ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:binxio-cfn-secret-provider'
@@ -532,3 +576,165 @@ Resources:
       Name: ArkKeyPair
       PublicKeyMaterial: !GetAtt 'ArkPrivateKey.PublicKey'
       ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:binxio-cfn-secret-provider'
+
+  ElasticIpForWindowsBastionA:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: ElasticIpForWindowsBastionA
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: network
+        - Key: Component
+          Value: vpc
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  ElasticIpForLinuxBastionA:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: ElasticIpForLinuxBastionA
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: network
+        - Key: Component
+          Value: vpc
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  RdpSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDP Servers
+      # once you create an SG you can't rename it ... 
+      # eventually I'll delete my working stack and start over
+      GroupName: Security group for Alfresco containers
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: Allow traffic from RDP Clients
+          IpProtocol: tcp
+          CidrIp: "0.0.0.0/0"
+          FromPort: 3389
+          ToPort: 3389      
+      Tags:
+        - Key: Name
+          Value: RdpSecurityGroup
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: rdp
+        - Key: Component
+          Value: vpc
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  SshSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for SSH servers
+      GroupName: SSH Security Group
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: Allow traffic from SSH clients
+          IpProtocol: tcp
+          CidrIp: "0.0.0.0/0"
+          FromPort: 22
+          ToPort: 22      
+      Tags:
+        - Key: Name
+          Value: SshSecurityGroup
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: rdp
+        - Key: Component
+          Value: vpc
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  ArkWindowsBastionA:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - WinServer2019Base
+      # NOTE the key pair is ArkCaseKeyPair, one I made on my 
+      # own, NOT the auto-generated key pair from above, since I 
+      # couldn't get that one to work with the AWS Console code 
+      # that decrypts the RDP password.
+      KeyName: "ArkCaseKeyPair"
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroupIds: 
+        - !GetAtt  RdpSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: ArkWindowsBastionA
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: bastion
+        - Key: Component
+          Value: remote-desktop
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  ArkLinuxBastionA:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - AmazonLinux2
+      # NOTE the key pair is ArkCaseKeyPair, one I made on my 
+      # own, NOT the auto-generated key pair from above, since I 
+      # couldn't get that one to work with the AWS Console code 
+      # that decrypts the RDP password.
+      KeyName: "ArkCaseKeyPair"
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroupIds: 
+        - !GetAtt  SshSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: ArkLinuxBastionA
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: bastion
+        - Key: Component
+          Value: ssh
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  ArkWindowsBastionAElasticIP:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIpForWindowsBastionA.AllocationId
+      InstanceId: !Ref ArkWindowsBastionA
+
+  ArkLinuxBastionAElasticIP:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ElasticIpForLinuxBastionA.AllocationId
+      InstanceId: !Ref ArkLinuxBastionA
