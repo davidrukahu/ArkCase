@@ -513,3 +513,22 @@ Resources:
           Value: cfn
         - Key: ManagedBy
           Value: CloudFormation
+
+  #EC2 instances
+
+  # private key and key pair, via cfn-secret-provider, https://github.com/binxio/cfn-secret-provider
+  ArkPrivateKey:
+    Type: Custom::RSAKey
+    Properties:
+      Name: /demo/private-key
+      KeyAlias: alias/aws/ssm
+      ReturnSecret: true
+      ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:binxio-cfn-secret-provider'
+
+  ArkKeyPair:
+    Type: Custom::KeyPair
+    DependsOn: ArkPrivateKey
+    Properties:
+      Name: ArkKeyPair
+      PublicKeyMaterial: !GetAtt 'ArkPrivateKey.PublicKey'
+      ServiceToken: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:binxio-cfn-secret-provider'
