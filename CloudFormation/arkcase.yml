@@ -105,7 +105,7 @@ Parameters:
 
   LatestWindowsServer2019AmiId:
     Type : AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-windows-latest/Windows_Server-1909-English-Core-Base
+    Default: /aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base
 
   LatestAmazonLinux2AmiId:
     Type : AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -530,7 +530,7 @@ Resources:
           Value: CloudFormation
 
   ##################
-  # EC2 instances  #
+  # Bastion Hosts  #
   ##################
   ElasticIpForWindowsBastionA:
     Type: AWS::EC2::EIP
@@ -673,3 +673,37 @@ Resources:
     Properties:
       AllocationId: !GetAtt ElasticIpForLinuxBastionA.AllocationId
       InstanceId: !Ref ArkLinuxBastionA
+
+  #########################################
+  # Active Directory Certificate Services #
+  #########################################
+  ArkADCSRoot:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          files:
+            c:\\cfn\\cfn-hup.conf:
+              content: |
+                [main]
+                stack=Ref! AWS::StackId
+                region=Ref! AWS::Region
+    Properties:
+      ImageId: !Ref LatestWindowsServer2019AmiId
+      KeyName: ArkCaseKeyPair
+      SubnetId: !Ref PrivateSubnetA
+      SecurityGroupIds: 
+        - !GetAtt  RdpSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: ArkADCSRoot
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: ADCS
+        - Key: Component
+          Value: ec2
+        - Key: ManagedBy
+          Value: CloudFormation
