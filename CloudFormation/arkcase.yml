@@ -677,26 +677,100 @@ Resources:
   #########################################
   # Active Directory Certificate Services #
   #########################################
-  ArkADCSRoot:
+
+  ArkSSMParameterWriterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: ssmParameterWriterRole
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'ssm:PutParameter'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/arkcase/*'
+
+  ArkSSMParameterWriterInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ArkSSMParameterWriterRole
+
+  ArkADCSRootCAv5:
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
         config:
+          packages:
+            msi: 
+              AWSCLIV2: "https://awscli.amazonaws.com/AWSCLIV2.msi"
           files:
-            c:\\cfn\\cfn-hup.conf:
-              content: |
+            "c:\\cfn\\cfn-hup.conf":
+              content: !Sub |
                 [main]
-                stack=Ref! AWS::StackId
-                region=Ref! AWS::Region
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+            "c:\\Windows\\CAPolicy.inf":
+              content: | 
+                [Version]
+                Signature="$Windows NT$"
+                [PolicyStatementExtension]
+                Policies=InternalPolicy
+                [InternalPolicy]
+                # the Armedia-specific OID
+                OID= 1.2.3.4.1455.67.89.5
+                Notice="Legal Policy Statement"
+                URL=https://github.com/ArkCase/DevOps/blob/master/cps.html
+                [Certsrv_Server]
+                RenewalKeyLength=4096
+                RenewalValidityPeriod=Years
+                RenewalValidityPeriodUnits=20
+                CRLPeriod=weeks
+                CRLPeriodUnits=26
+                CRLDeltaPeriod=Days
+                CRLDeltaPeriodUnits=0
+                LoadDefaultTemplates=0
+                AlternateSignatureAlgorithm=0
+          commands:
+            add_adcs_ca_feature:
+              command: powershell.exe -Command "Add-WindowsFeature Adcs-Cert-Authority -IncludeManagementTools"
+              test: powershell -Command "$result = Get-WindowsFeature -name ADCS-Cert-Authority | Where Installed ; exit $result.length"
+              waitAfterCompletion: '0'
+            install_adcs_ca:
+              command: ECHO Y | powershell.exe -Command "Install-AdcsCertificationAuthority -CAType StandaloneRootCA -CACommonName 'ArkCase Research and Development Root CA V2' -KeyLength 4096 -HashAlgorithm SHA256 -CryptoProviderName 'RSA#Microsoft Software Key Storage Provider'"
+            write_crl_to_ssm_param:
+              command: powershell.exe -Command "$crl = [Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\Windows\System32\CertSrv\CertEnroll\ArkCase Research and Development Root CA V2.crl')) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --overwrite --name /arkcase/adcs_crl --type SecureString --value $crl"
+            write_cert_to_ssm_param:
+              command: powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crt ; cd C:\Windows\System32\CertSrv\CertEnroll ; $crt = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --overwrite --name /arkcase/adcs_crt --type SecureString --value $crt" 
+            signal_done:
+              command: cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource ArkADCSRootCAv5 --region ${AWS::Region}
     Properties:
       ImageId: !Ref LatestWindowsServer2019AmiId
+      IamInstanceProfile: !Ref ArkSSMParameterWriterInstanceProfile
       KeyName: ArkCaseKeyPair
       SubnetId: !Ref PrivateSubnetA
       SecurityGroupIds: 
         - !GetAtt  RdpSecurityGroup.GroupId
+      UserData:
+        Fn::Base64: !Sub |
+          <script>
+          cfn-init.exe -v --stack ${AWS::StackId} --resource ArkADCSRootCAv5 --region ${AWS::Region} --configsets default
+          </script>
       Tags:
         - Key: Name
-          Value: ArkADCSRoot
+          Value: ArkADCSRootCAv5
         - Key: Env
           Value: !Ref Env
         - Key: Project
