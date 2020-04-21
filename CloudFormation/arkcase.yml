@@ -29,6 +29,10 @@ Parameters:
     ConstraintDescription: Must be a valid CIDR range like "10.10.0.0/16"
     Default: 10.210.0.0/16
 
+  KeyPair: 
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing key pair to associate to EC2 instances
+
   DsEdition:
     Type: String
     Description: Whether Directory Services is Enterprise or Standard
@@ -53,6 +57,13 @@ Parameters:
     MaxLength: 64
     AllowedPattern: (?=^.{12,64}$)((?=.*\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[^A-Za-z0-9\s])(?=.*[a-z])|(?=.*[^A-Za-z0-9\s])(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9\s]))^.*
     ConstraintDescription: 12-64 characters; must have digits, lower case characters, upper case characters, and special characters.
+
+  CertAuthorityCommonName:
+    Type: String
+    Description: Common name that will appear in SSL certs generated in this environment.
+    MinLength: 10
+    MaxLength: 64
+    Default: ArkCase Research and Development Root CA V2
 
   RdsBackupWindow:
     Type: String
@@ -118,6 +129,7 @@ Metadata:
         Parameters:
           - Env
           - VpcCidr
+          - KeyPair
 
       - Label: { default: "Definition (this and the following sections are less important)" }
         Parameters:
@@ -140,6 +152,7 @@ Metadata:
           - DsEdition
           - DsName
           - DsPassword
+          - CertAuthorityCommonName
 
       - Label: { default: EC2 Instance AMI IDs }
         Parameters:
@@ -149,9 +162,11 @@ Metadata:
     ParameterLabels:
       Env: { default: Environment }
       VpcCidr: { default: VPC CIDR block }
+      KeyPair: { default: Key pair to control access to EC2 instances }
       DsEdition: { default: Directory Services Edition }
       DsName: { default: Domain Name }
       DsPassword: { default: Admin User Password }
+      CertAuthorityCommonName: { default: TLS Root Certificate Common Name }
       RdsBackupWindow: { default: RDS daily backup window }
       RdsMaintenanceWindow: { default: RDS weekly maintenance window }
       RdsPasswordLength: { default: RDS password length }
@@ -622,7 +637,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref LatestWindowsServer2019AmiId
-      KeyName: ArkCaseKeyPair
+      KeyName: !Ref KeyPair
       SubnetId: !Ref PublicSubnetA
       SecurityGroupIds: 
         - !GetAtt  RdpSecurityGroup.GroupId
@@ -644,7 +659,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref LatestAmazonLinux2AmiId
-      KeyName: ArkCaseKeyPair
+      KeyName: !Ref KeyPair
       SubnetId: !Ref PublicSubnetA
       SecurityGroupIds: 
         - !GetAtt  SshSecurityGroup.GroupId
@@ -705,17 +720,17 @@ Resources:
       Roles:
         - !Ref ArkAdcsRole
 
-  ArkADCSRootCAv7:
+  ArkADCSRootCA:
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
         config:
           packages:
             msi: 
-              AWSCLIV2: "https://awscli.amazonaws.com/AWSCLIV2.msi"
+              AWSCLIV2: https://awscli.amazonaws.com/AWSCLIV2.msi
           files:
             C:\\Windows\\CAPolicy.inf:
-              content: | 
+              content: !Sub | 
                 [Version]
                 Signature="$Windows NT$"
                 [PolicyStatementExtension]
@@ -724,7 +739,7 @@ Resources:
                 # the Armedia-specific OID
                 OID= 1.2.3.4.1455.67.89.5
                 Notice="Legal Policy Statement"
-                URL=https://github.com/ArkCase/DevOps/blob/master/cps.html
+                URL=http://pki.${DsName}/pki/cps.txt
                 [Certsrv_Server]
                 RenewalKeyLength=4096
                 RenewalValidityPeriod=Years
@@ -736,16 +751,38 @@ Resources:
                 LoadDefaultTemplates=0
                 AlternateSignatureAlgorithm=0
           commands:
-            add_adcs_ca_feature:
+            01_add_adcs_ca_feature:
               command: powershell.exe -Command "Add-WindowsFeature Adcs-Cert-Authority -IncludeManagementTools"
               test: powershell -Command "$result = Get-WindowsFeature -name ADCS-Cert-Authority | Where Installed ; exit $result.length"
-              waitAfterCompletion: '0'
-            install_adcs_ca:
-              command: ECHO Y | powershell.exe -Command "Install-AdcsCertificationAuthority -CAType StandaloneRootCA -CACommonName 'ArkCase Research and Development Root CA V2' -KeyLength 4096 -HashAlgorithm SHA256 -CryptoProviderName 'RSA#Microsoft Software Key Storage Provider'"
-            write_crl_to_ssm_param:
-              command: powershell.exe -Command "$crl = [Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\Windows\System32\CertSrv\CertEnroll\ArkCase Research and Development Root CA V2.crl')) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --overwrite --name /arkcase/adcs/adcs_crl --type SecureString --value $crl"
-            write_cert_to_ssm_param:
-              command: powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crt ; cd C:\Windows\System32\CertSrv\CertEnroll ; $crt = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --overwrite --name /arkcase/adcs/adcs_crt --type SecureString --value $crt" 
+            02_install_adcs_ca:
+              command: !Sub ECHO Y | powershell.exe -Command "Install-AdcsCertificationAuthority -CAType StandaloneRootCA -CACommonName '${CertAuthorityCommonName}' -KeyLength 4096 -HashAlgorithm SHA256 -CryptoProviderName 'RSA#Microsoft Software Key Storage Provider'"
+            03_remove_default_crls: 
+              command: powershell.exe -Command "$crllist = Get-CACrlDistributionPoint; foreach ($crl in $crllist) {Remove-CACrlDistributionPoint $crl.uri -Force};"
+            04_add_our_crl: 
+              command: powershell.exe -Command "Add-CACRLDistributionPoint -Uri C:\Windows\System32\CertSrv\CertEnroll\%3%8.crl -PublishToServer -Force"
+            # NOTE ADCS doesn't allow https in the below command
+            05_add_our_crl_dist:
+              command: !Sub powershell.exe -Command "Add-CACRLDistributionPoint -Uri http://pki.${DsName}/pki/%3%8.crl -AddToCertificateCDP -Force"
+            06_remove_default_aia:
+              command: powershell.exe -Command "$aialist = Get-CAAuthorityInformationAccess; foreach ($aia in $aialist) {Remove-CAAuthorityInformationAccess $aia.uri -Force};"
+            07_set_overlap_period_units:
+              command: certutil -setreg CA\CRLOverlapPeriodUnits 12
+            08_set_overlap_period:
+              command: certutil -setreg CA\CRLOverlapPeriod "Hours"
+            09_set_validity_period_units:
+              command: certutil -setreg CA\ValidityPeriodUnits 10
+            10_set_validity_period:
+              command: certutil -setreg CA\ValidityPeriod "Years"
+            11_set_audit_filter:
+              command: certutil -setreg CA\AuditFilter 127
+            12_restart_certsvc:
+              command: powershell.exe -Command "restart-service certsvc"
+            13_configure_crl:
+              command: certutil -crl
+            14_write_crl_to_ssm_param:
+              command: !Sub powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crl ; cd C:\Windows\System32\CertSrv\CertEnroll ; $crl = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite --name /arkcase/adcs/adcs_crl --type SecureString --value $crl"
+            15_write_cert_to_ssm_param:
+              command: !Sub powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crt ; cd C:\Windows\System32\CertSrv\CertEnroll ; $crt = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite --name /arkcase/adcs/adcs_crt --type SecureString --value $crt" 
     CreationPolicy:
       ResourceSignal:
         Count: 1
@@ -753,19 +790,20 @@ Resources:
     Properties:
       ImageId: !Ref LatestWindowsServer2019AmiId
       IamInstanceProfile: !Ref ArkAdcsInstanceProfile
-      KeyName: ArkCaseKeyPair
+      KeyName: !Ref KeyPair
+      DisableApiTermination: true
       SubnetId: !Ref PrivateSubnetA
       SecurityGroupIds: 
         - !GetAtt  RdpSecurityGroup.GroupId
       UserData:
         Fn::Base64: !Sub |
           <script>
-          cfn-init.exe -v --stack ${AWS::StackId} --resource ArkADCSRootCAv7 --region ${AWS::Region} --configsets default
-          cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource ArkADCSRootCAv7 --region ${AWS::Region}
+          cfn-init.exe -v --stack ${AWS::StackId} --resource ArkADCSRootCA --region ${AWS::Region} --configsets default
+          cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource ArkADCSRootCA --region ${AWS::Region}
           </script>
       Tags:
         - Key: Name
-          Value: ArkADCSRootCAv7
+          Value: ArkADCSRootCA
         - Key: Env
           Value: !Ref Env
         - Key: Project
