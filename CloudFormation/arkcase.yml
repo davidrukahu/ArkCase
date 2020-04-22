@@ -32,6 +32,18 @@ Parameters:
   KeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Existing key pair to associate to EC2 instances
+    
+  MaintenanceWindowStart:
+    Type: String
+    Description: >
+      Weekly maintenance window for the whole deployment. Must be in the
+      format "DDD:HH:MM" and must be in UTC time. "DDD" is the three-letter day
+      of the week (eg: "Sun"); "HH" is the hour in 24h format; "MM" is the
+      minutes. We strongly recommend you use Sunday early morning in your own
+      time zone. The maintenance would typically take a couple of hours.
+    Default: Sun:08:00
+    AllowedPattern: ^[a-zA-Z]{3}:[0-2][0-9]:[0-5][0-9]$
+    ConstraintDescription: Must be in the format "DDD:HH:MM"
 
   DsEdition:
     Type: String
@@ -52,40 +64,17 @@ Parameters:
   DsPassword:
     Type: String
     Description: |
-      The password for the default administrative user named Admin.
+      The password for the default administrative user named Admin. The
+      password must be between 12 and 64 characters, not contain the
+      word "admin", and must have at least one character from three of these
+      four categories: lowercase, uppercase, numeric and special characters
+    NoEcho: true
     MinLength: 12
     MaxLength: 64
     AllowedPattern: (?=^.{12,64}$)((?=.*\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[^A-Za-z0-9\s])(?=.*[a-z])|(?=.*[^A-Za-z0-9\s])(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9\s]))^.*
-    ConstraintDescription: |
-      12-64 characters; must have digits, lower case characters,
-      upper case characters, and special characters.
-
-  CertAuthorityCommonName:
-    Type: String
-    Description: Common name that will appear in SSL certs generated in this environment.
-    MinLength: 10
-    MaxLength: 64
-    Default: ArkCase Research and Development Root CA V2
-
-  RdsBackupWindow:
-    Type: String
-    Description: >
-      Daily backup window for RDS instances; must be in the
-      format "HH:MM-HH:MM" and must be in UTC time; must not conflict
-      with the maintenance window; must be at least 30 minutes
-    Default: "08:00-08:30"
-    AllowedPattern: "^[0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]$"
-    ConstraintDescription: Must be in the format "HH:MM-HH:MM"
-
-  RdsMaintenanceWindow:
-    Type: String
-    Description: >
-      Weekly maintenance window for RDS instances; must be in the
-      format "DDD:HH:MM-DDD:HH:MM" and must be in UTC time; must not
-      conflict with the backup window; must be at least 30 minutes
-    Default: "Sun:08:30-Sun:09:00"
-    AllowedPattern: "^[a-zA-Z]{3}:[0-2][0-9]:[0-5][0-9]-[a-zA-Z]{3}:[0-2][0-9]:[0-5][0-9]$"
-    ConstraintDescription: Must be in the format "DDD:HH:MM-DDD:HH:MM"
+    ConstraintDescription: >
+      12-64 characters; must have at least one character from three of these
+      four categories: lowercase, uppercase, numeric and special characters
 
   RdsPasswordLength:
     Type: Number
@@ -132,6 +121,7 @@ Metadata:
           - Env
           - VpcCidr
           - KeyPair
+          - MaintenanceWindowStart
 
       - Label: { default: Definition (this and the following sections are less important) }
         Parameters:
@@ -139,8 +129,6 @@ Metadata:
 
       - Label: { default: General database configuration }
         Parameters:
-          - RdsBackupWindow
-          - RdsMaintenanceWindow
           - RdsPasswordLength
           - RdsPasswordRotationInDays
 
@@ -169,8 +157,7 @@ Metadata:
       DsName: { default: Domain Name }
       DsPassword: { default: Admin User Password }
       CertAuthorityCommonName: { default: TLS Root Certificate Common Name }
-      RdsBackupWindow: { default: RDS daily backup window }
-      RdsMaintenanceWindow: { default: RDS weekly maintenance window }
+      MaintenanceWindowStart: { default: Start of weekly maintenance window }
       RdsPasswordLength: { default: RDS password length }
       RdsPasswordRotationInDays: { default: "RDS password rotation, in days" }
       AlfrescoRdsInstanceClass: { default: Alfresco RDS instance class }
@@ -472,6 +459,67 @@ Resources:
       SubnetId: !Ref PrivateSubnetB
       RouteTableId: !Ref PrivateRouteTableB
 
+  ###############################
+  # Compute Maintenance Windows #
+  ###############################
+
+  MaintenanceWindowsLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: admin
+        - Key: Component
+          Value: iam
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  MaintenanceWindowsLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Calculate ArkCase maintenance windows
+      Runtime: python3.7
+      Role: !GetAtt MaintenanceWindowsLambdaExecutionRole.Arn
+      Handler: maintenance_windows_lambda.handler
+      Timeout: 5
+      Code:
+        S3Bucket: !Sub arkcase-public-${AWS::Region}
+        S3Key: DevOps/PACKAGE_VERSION/maintenance_windows_lambda/maintenance_windows_lambda.zip
+      Tags:
+        - Key: Env
+          Value: !Ref Env
+        - Key: Project
+          Value: !Ref Project
+        - Key: Service
+          Value: admin
+        - Key: Component
+          Value: lambda
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  MaintenanceWindows:
+    Type: Custom::MaintenanceWindows
+    Properties:
+      ServiceToken: !GetAtt MaintenanceWindowsLambda.Arn
+      Start: !Ref MaintenanceWindowStart
+
+  ######################################
+  # Microsoft Active Directory Service #
+  ######################################
+
   DirectoryService:
     Type: AWS::DirectoryService::MicrosoftAD
     Properties:
@@ -508,7 +556,7 @@ Resources:
   AlfrescoDatabase:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://arkcase-public-us-east-1.s3.amazonaws.com/DevOps/CloudFormation/mariadb.yml
+      TemplateURL: https://arkcase-public-us-east-1.s3.amazonaws.com/DevOps/PACKAGE_VERSION/CloudFormation/mariadb.yml
       TimeoutInMinutes: 30
       Parameters:
         Env: !Ref Env
@@ -522,8 +570,9 @@ Resources:
         InstanceClass: !Ref AlfrescoRdsInstanceClass
         DiskSizeGB: !Ref AlfrescoRdsDiskSizeGB
         EnableMultiAZ: true
-        BackupWindow: !Ref RdsBackupWindow
-        MaintenanceWindow: !Ref RdsMaintenanceWindow
+        BackupWindow: !Sub ${MaintenanceWindows.StartRdsBackup}-${MaintenanceWindows.EndRdsBackup}
+        MaintenanceWindow:
+          !Sub ${MaintenanceWindows.StartAlfrescoRdsMaintenance}-${MaintenanceWindows.EndAlfrescoRdsMaintenance}
         AutoMinorUpgrade: true
         PasswordLength: !Ref RdsPasswordLength
         RotationInDays: !Ref RdsPasswordRotationInDays
@@ -830,3 +879,28 @@ Resources:
           Value: ec2
         - Key: ManagedBy
           Value: CloudFormation
+Outputs:
+  StartBlockTraffic:
+    Description: Begin weekly maintenance window
+    Value: !GetAtt MaintenanceWindows.StartBlockTraffic
+  StartRdsBackup:
+    Description: When to start backing up RDS instances
+    Value: !GetAtt MaintenanceWindows.StartRdsBackup
+  EndRdsBackup:
+    Description: When to end backing up RDS instances
+    Value: !GetAtt MaintenanceWindows.EndRdsBackup
+  StartAlfrescoRdsMaintenance:
+    Description: When to start maintenance of the Alfresco RDS instance
+    Value: !GetAtt MaintenanceWindows.StartAlfrescoRdsMaintenance
+  EndAlfrescoRdsMaintenance:
+    Description: When to end maintenance of the Alfresco RDS instance
+    Value: !GetAtt MaintenanceWindows.EndAlfrescoRdsMaintenance
+  StartAmazonmqMaintenanceDayOfWeek:
+    Description: When to start maintenance of AmazonMQ (day of week)
+    Value: !GetAtt MaintenanceWindows.StartAmazonmqMaintenanceDayOfWeek
+  StartAmazonmqMaintenanceTimeOfDay:
+    Description: When to start maintenance of AmazonMQ (time of day)
+    Value: !GetAtt MaintenanceWindows.StartAmazonmqMaintenanceTimeOfDay
+  EndBlockTraffic:
+    Description: End weekly maintenance window
+    Value: !GetAtt MaintenanceWindows.EndBlockTraffic
