@@ -10,7 +10,7 @@ Parameters:
     Type: String
     Description: Type of environment to provision
     Default: prod
-    AllowedValues: [staging, prod, dev, test, load-test]
+    AllowedValues: [ staging, prod, dev, test, load-test ]
 
   Project:
     Type: String
@@ -29,7 +29,7 @@ Parameters:
     ConstraintDescription: Must be a valid CIDR range like "10.10.0.0/16"
     Default: 10.210.0.0/16
 
-  KeyPair: 
+  KeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Existing key pair to associate to EC2 instances
 
@@ -37,14 +37,14 @@ Parameters:
     Type: String
     Description: Whether Directory Services is Enterprise or Standard
     Default: Standard
-    AllowedValues: [Enterprise, Standard]
+    AllowedValues: [ Enterprise, Standard ]
 
   DsName:
     Type: String
     Description: |
       The fully qualified domain name for the AWS Managed Microsoft AD directory, such as
-      corp.example.com. This name will resolve inside your VPC only. It does not need to be 
-      publicly resolvable. 
+      corp.example.com. This name will resolve inside your VPC only. It does not need to be
+      publicly resolvable.
     AllowedPattern: ^([a-zA-Z0-9]+[\\.-])+([a-zA-Z0-9])+$
     ConstraintDescription: Must be a valid fully qualified domain name.
     Default: ecmontap.com
@@ -52,11 +52,13 @@ Parameters:
   DsPassword:
     Type: String
     Description: |
-      The password for the default administrative user named Admin. 
+      The password for the default administrative user named Admin.
     MinLength: 12
     MaxLength: 64
     AllowedPattern: (?=^.{12,64}$)((?=.*\d)(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[^A-Za-z0-9\s])(?=.*[a-z])|(?=.*[^A-Za-z0-9\s])(?=.*[A-Z])(?=.*[a-z])|(?=.*\d)(?=.*[A-Z])(?=.*[^A-Za-z0-9\s]))^.*
-    ConstraintDescription: 12-64 characters; must have digits, lower case characters, upper case characters, and special characters.
+    ConstraintDescription: |
+      12-64 characters; must have digits, lower case characters,
+      upper case characters, and special characters.
 
   CertAuthorityCommonName:
     Type: String
@@ -115,11 +117,11 @@ Parameters:
     Default: 50
 
   LatestWindowsServer2019AmiId:
-    Type : AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base
 
   LatestAmazonLinux2AmiId:
-    Type : AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
 
 Metadata:
@@ -131,7 +133,7 @@ Metadata:
           - VpcCidr
           - KeyPair
 
-      - Label: { default: "Definition (this and the following sections are less important)" }
+      - Label: { default: Definition (this and the following sections are less important) }
         Parameters:
           - Project
 
@@ -472,16 +474,15 @@ Resources:
 
   DirectoryService:
     Type: AWS::DirectoryService::MicrosoftAD
-    Properties: 
+    Properties:
       Name: !Ref DsName
       Password: !Ref DsPassword
       Edition: !Ref DsEdition
-      VpcSettings: 
-        SubnetIds: 
-          - !Ref PrivateSubnetA 
+      VpcSettings:
+        SubnetIds:
+          - !Ref PrivateSubnetA
           - !Ref PrivateSubnetB
         VpcId: !Ref Vpc
-      # AWS::DirectoryService::MicrosoftAD doesn't support Tags :-(
 
   ############
   # Alfresco #
@@ -492,12 +493,6 @@ Resources:
     Properties:
       GroupDescription: Security group for Alfresco containers
       VpcId: !Ref Vpc
-      #SecurityGroupIngress:
-      #  - Description: Allow traffic from ArkCase containers
-      #    IpProtocol: tcp
-      #    FromPort: 443
-      #    ToPort: 443
-      #    SourceSecurityGroupId: !GetAtt ArkcaseSecurityGroup.GroupId
       Tags:
         - Key: Env
           Value: !Ref Env
@@ -591,9 +586,9 @@ Resources:
       SecurityGroupIngress:
         - Description: Allow traffic from RDP Clients
           IpProtocol: tcp
-          CidrIp: "0.0.0.0/0"
+          CidrIp: 0.0.0.0/0
           FromPort: 3389
-          ToPort: 3389      
+          ToPort: 3389
       Tags:
         - Key: Name
           Value: RdpSecurityGroup
@@ -616,9 +611,9 @@ Resources:
       SecurityGroupIngress:
         - Description: Allow traffic from SSH clients
           IpProtocol: tcp
-          CidrIp: "0.0.0.0/0"
+          CidrIp: 0.0.0.0/0
           FromPort: 22
-          ToPort: 22      
+          ToPort: 22
       Tags:
         - Key: Name
           Value: SshSecurityGroup
@@ -639,7 +634,7 @@ Resources:
       ImageId: !Ref LatestWindowsServer2019AmiId
       KeyName: !Ref KeyPair
       SubnetId: !Ref PublicSubnetA
-      SecurityGroupIds: 
+      SecurityGroupIds:
         - !GetAtt  RdpSecurityGroup.GroupId
       Tags:
         - Key: Name
@@ -661,7 +656,7 @@ Resources:
       ImageId: !Ref LatestAmazonLinux2AmiId
       KeyName: !Ref KeyPair
       SubnetId: !Ref PublicSubnetA
-      SecurityGroupIds: 
+      SecurityGroupIds:
         - !GetAtt  SshSecurityGroup.GroupId
       Tags:
         - Key: Name
@@ -720,17 +715,17 @@ Resources:
       Roles:
         - !Ref ArkAdcsRole
 
-  ArkADCSRootCA:
+  ArkADCSRootCA14:
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
         config:
           packages:
-            msi: 
+            msi:
               AWSCLIV2: https://awscli.amazonaws.com/AWSCLIV2.msi
           files:
             C:\\Windows\\CAPolicy.inf:
-              content: !Sub | 
+              content: !Sub |
                 [Version]
                 Signature="$Windows NT$"
                 [PolicyStatementExtension]
@@ -753,18 +748,29 @@ Resources:
           commands:
             01_add_adcs_ca_feature:
               command: powershell.exe -Command "Add-WindowsFeature Adcs-Cert-Authority -IncludeManagementTools"
-              test: powershell -Command "$result = Get-WindowsFeature -name ADCS-Cert-Authority | Where Installed ; exit $result.length"
             02_install_adcs_ca:
-              command: !Sub ECHO Y | powershell.exe -Command "Install-AdcsCertificationAuthority -CAType StandaloneRootCA -CACommonName '${CertAuthorityCommonName}' -KeyLength 4096 -HashAlgorithm SHA256 -CryptoProviderName 'RSA#Microsoft Software Key Storage Provider'"
-            03_remove_default_crls: 
-              command: powershell.exe -Command "$crllist = Get-CACrlDistributionPoint; foreach ($crl in $crllist) {Remove-CACrlDistributionPoint $crl.uri -Force};"
-            04_add_our_crl: 
-              command: powershell.exe -Command "Add-CACRLDistributionPoint -Uri C:\Windows\System32\CertSrv\CertEnroll\%3%8.crl -PublishToServer -Force"
+              command: !Sub |
+                ECHO Y | powershell.exe -Command "Install-AdcsCertificationAuthority -CAType StandaloneRootCA \
+                -CACommonName '${CertAuthorityCommonName}' -KeyLength 4096 -HashAlgorithm SHA256 -CryptoProviderName \
+                'RSA#Microsoft Software Key Storage Provider'"
+            03_remove_default_crls:
+              command: |
+                powershell.exe -Command "$crllist = Get-CACrlDistributionPoint; foreach ($crl in $crllist) \
+                {Remove-CACrlDistributionPoint $crl.uri -Force};"
+            04_add_our_crl:
+              command: |
+                powershell.exe -Command "Add-CACRLDistributionPoint \
+                -Uri C:\Windows\System32\CertSrv\CertEnroll\%3%8.crl \
+                -PublishToServer -Force"
             # NOTE ADCS doesn't allow https in the below command
             05_add_our_crl_dist:
-              command: !Sub powershell.exe -Command "Add-CACRLDistributionPoint -Uri http://pki.${DsName}/pki/%3%8.crl -AddToCertificateCDP -Force"
+              command: !Sub |
+                powershell.exe -Command "Add-CACRLDistributionPoint -Uri http://pki.${DsName}/pki/%3%8.crl \
+                -AddToCertificateCDP -Force"
             06_remove_default_aia:
-              command: powershell.exe -Command "$aialist = Get-CAAuthorityInformationAccess; foreach ($aia in $aialist) {Remove-CAAuthorityInformationAccess $aia.uri -Force};"
+              command: |
+                powershell.exe -Command "$aialist = Get-CAAuthorityInformationAccess; \
+                foreach ($aia in $aialist) {Remove-CAAuthorityInformationAccess $aia.uri -Force};"
             07_set_overlap_period_units:
               command: certutil -setreg CA\CRLOverlapPeriodUnits 12
             08_set_overlap_period:
@@ -780,9 +786,19 @@ Resources:
             13_configure_crl:
               command: certutil -crl
             14_write_crl_to_ssm_param:
-              command: !Sub powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crl ; cd C:\Windows\System32\CertSrv\CertEnroll ; $crl = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite --name /arkcase/adcs/adcs_crl --type SecureString --value $crl"
+              command: !Sub |
+                powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crl ; \
+                cd C:\Windows\System32\CertSrv\CertEnroll ; \
+                $crl = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; \
+                C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite \
+                --name /arkcase/adcs/adcs_crl --type SecureString --value $crl"
             15_write_cert_to_ssm_param:
-              command: !Sub powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crt ; cd C:\Windows\System32\CertSrv\CertEnroll ; $crt = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite --name /arkcase/adcs/adcs_crt --type SecureString --value $crt" 
+              command: !Sub |
+                powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crt ; \
+                cd C:\Windows\System32\CertSrv\CertEnroll ; \
+                $crt = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; \
+                C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite \
+                --name /arkcase/adcs/adcs_crt --type SecureString --value $crt"
     CreationPolicy:
       ResourceSignal:
         Count: 1
@@ -793,17 +809,17 @@ Resources:
       KeyName: !Ref KeyPair
       DisableApiTermination: true
       SubnetId: !Ref PrivateSubnetA
-      SecurityGroupIds: 
+      SecurityGroupIds:
         - !GetAtt  RdpSecurityGroup.GroupId
       UserData:
         Fn::Base64: !Sub |
           <script>
-          cfn-init.exe -v --stack ${AWS::StackId} --resource ArkADCSRootCA --region ${AWS::Region} --configsets default
-          cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource ArkADCSRootCA --region ${AWS::Region}
+          cfn-init.exe -v --stack ${AWS::StackId} --resource ArkADCSRootCA14 --region ${AWS::Region} --configsets default
+          cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource ArkADCSRootCA14 --region ${AWS::Region}
           </script>
       Tags:
         - Key: Name
-          Value: ArkADCSRootCA
+          Value: ArkADCSRootCA14
         - Key: Env
           Value: !Ref Env
         - Key: Project
