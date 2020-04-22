@@ -32,7 +32,14 @@ Parameters:
   KeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Existing key pair to associate to EC2 instances
-    
+
+  CertAuthorityCommonName:
+    Type: String
+    Description: Common name that will appear in SSL certs generated in this environment.
+    MinLength: 10
+    MaxLength: 64
+    Default: ArkCase Research and Development Root CA V2
+
   MaintenanceWindowStart:
     Type: String
     Description: >
@@ -764,7 +771,7 @@ Resources:
       Roles:
         - !Ref ArkAdcsRole
 
-  ArkADCSRootCA14:
+  ArkADCSRootCA15:
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
@@ -798,28 +805,16 @@ Resources:
             01_add_adcs_ca_feature:
               command: powershell.exe -Command "Add-WindowsFeature Adcs-Cert-Authority -IncludeManagementTools"
             02_install_adcs_ca:
-              command: !Sub |
-                ECHO Y | powershell.exe -Command "Install-AdcsCertificationAuthority -CAType StandaloneRootCA \
-                -CACommonName '${CertAuthorityCommonName}' -KeyLength 4096 -HashAlgorithm SHA256 -CryptoProviderName \
-                'RSA#Microsoft Software Key Storage Provider'"
+              command: !Sub ECHO Y | powershell.exe -Command "Install-AdcsCertificationAuthority -CAType StandaloneRootCA -CACommonName '${CertAuthorityCommonName}' -KeyLength 4096 -HashAlgorithm SHA256 -CryptoProviderName 'RSA#Microsoft Software Key Storage Provider'"
             03_remove_default_crls:
-              command: |
-                powershell.exe -Command "$crllist = Get-CACrlDistributionPoint; foreach ($crl in $crllist) \
-                {Remove-CACrlDistributionPoint $crl.uri -Force};"
+              command: powershell.exe -Command "$crllist = Get-CACrlDistributionPoint; foreach ($crl in $crllist) {Remove-CACrlDistributionPoint $crl.uri -Force};"
             04_add_our_crl:
-              command: |
-                powershell.exe -Command "Add-CACRLDistributionPoint \
-                -Uri C:\Windows\System32\CertSrv\CertEnroll\%3%8.crl \
-                -PublishToServer -Force"
+              command: powershell.exe -Command "Add-CACRLDistributionPoint -Uri C:\Windows\System32\CertSrv\CertEnroll\%3%8.crl -PublishToServer -Force"
             # NOTE ADCS doesn't allow https in the below command
             05_add_our_crl_dist:
-              command: !Sub |
-                powershell.exe -Command "Add-CACRLDistributionPoint -Uri http://pki.${DsName}/pki/%3%8.crl \
-                -AddToCertificateCDP -Force"
+              command: !Sub powershell.exe -Command "Add-CACRLDistributionPoint -Uri http://pki.${DsName}/pki/%3%8.crl -AddToCertificateCDP -Force"
             06_remove_default_aia:
-              command: |
-                powershell.exe -Command "$aialist = Get-CAAuthorityInformationAccess; \
-                foreach ($aia in $aialist) {Remove-CAAuthorityInformationAccess $aia.uri -Force};"
+              command: powershell.exe -Command "$aialist = Get-CAAuthorityInformationAccess; foreach ($aia in $aialist) {Remove-CAAuthorityInformationAccess $aia.uri -Force};"
             07_set_overlap_period_units:
               command: certutil -setreg CA\CRLOverlapPeriodUnits 12
             08_set_overlap_period:
@@ -835,19 +830,9 @@ Resources:
             13_configure_crl:
               command: certutil -crl
             14_write_crl_to_ssm_param:
-              command: !Sub |
-                powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crl ; \
-                cd C:\Windows\System32\CertSrv\CertEnroll ; \
-                $crl = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; \
-                C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite \
-                --name /arkcase/adcs/adcs_crl --type SecureString --value $crl"
+              command: !Sub powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crl ; cd C:\Windows\System32\CertSrv\CertEnroll ; $crl = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite --name /arkcase/adcs/adcs_crl --type SecureString --value $crl"
             15_write_cert_to_ssm_param:
-              command: !Sub |
-                powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crt ; \
-                cd C:\Windows\System32\CertSrv\CertEnroll ; \
-                $crt = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; \
-                C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite \
-                --name /arkcase/adcs/adcs_crt --type SecureString --value $crt"
+              command: !Sub powershell.exe -Command "$file = Get-ChildItem -Path C:\Windows\System32\CertSrv\CertEnroll\*.crt ; cd C:\Windows\System32\CertSrv\CertEnroll ; $crt = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) ; C:\PROGRA~1\Amazon\AWSCLIV2\aws ssm put-parameter --region ${AWS::Region} --overwrite --name /arkcase/adcs/adcs_crt --type SecureString --value $crt"
     CreationPolicy:
       ResourceSignal:
         Count: 1
@@ -863,12 +848,12 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           <script>
-          cfn-init.exe -v --stack ${AWS::StackId} --resource ArkADCSRootCA14 --region ${AWS::Region} --configsets default
-          cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource ArkADCSRootCA14 --region ${AWS::Region}
+          cfn-init.exe -v --stack ${AWS::StackId} --resource ArkADCSRootCA15 --region ${AWS::Region} --configsets default
+          cfn-signal.exe -e %errorlevel% --stack ${AWS::StackId} --resource ArkADCSRootCA15 --region ${AWS::Region}
           </script>
       Tags:
         - Key: Name
-          Value: ArkADCSRootCA14
+          Value: ArkADCSRootCA15
         - Key: Env
           Value: !Ref Env
         - Key: Project
