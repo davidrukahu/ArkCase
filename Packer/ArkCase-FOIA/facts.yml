@@ -215,6 +215,7 @@ ldap_users:
     groups:
       - '{{ arkcase_admin_group }}'
       - 'CN={{ ldap_prefix }}ARKCASE_ENTITY_ADMINISTRATOR,{{ldap_group_base}}'
+      - 'CN={{ ldap_prefix }}OFFICERS,{{ldap_group_base}}'
     nonexpiring_password: true
     
 mariadb_data_folder: '{{ root_folder }}/data/mariadb'
@@ -227,6 +228,7 @@ pentaho_host: '{{ internal_host }}'
 pentaho_major_version: 8.3
 pentaho_minor_version: 0.0-371
 pentaho_server_url: 'https://{{ external_host }}/arkcase/pentaho'
+pentaho_ee_license_year: 2020
 records_management_categories:
   - Case Files
   - Complaints
@@ -329,7 +331,7 @@ rules_spreadsheet_updates:
       /home/arkcase/.arkcase/acm/acm-config-server-repo/rules/drools-assignment-rules-server.xlsx
     replacements: >-
       "assignee, owen.officer@arkcase.org" "assignee, {{ ldap_prefix
-      }}owen.officer@{{ ldap_user_domain }}" "owning group,
+      }}arkcase-admin@{{ ldap_user_domain }}" "owning group,
       ARKCASE_ADMINISTRATOR@ARKCASE.ORG" "owning group, {{ ldap_prefix
       }}ARKCASE_ADMINISTRATOR@{{ ldap_user_domain | upper }}" "owning group,
       OFFICERS@ARKCASE.ORG" "owning group, {{ ldap_prefix }}OFFICERS@{{
@@ -344,7 +346,7 @@ rules_spreadsheet_updates:
       /home/arkcase/.arkcase/acm/acm-config-server-repo/rules/drools-task-rules-server.xlsx
     replacements: >-
       "setAssignee, 'owen.officer@arkcase.org'" "setAssignee, '{{ ldap_prefix
-      }}owen.officer@{{ ldap_user_domain }}'" "setCandidateGroups,
+      }}arkcase-admin@{{ ldap_user_domain }}'" "setCandidateGroups,
       addGroup('OFFICERS@ARKCASE.ORG')" "setCandidateGroups, addGroup('{{
       ldap_prefix }}OFFICERS@{{ ldap_user_domain | upper }}')"
   
