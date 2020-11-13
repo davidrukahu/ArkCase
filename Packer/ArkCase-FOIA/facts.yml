@@ -13,9 +13,9 @@ alfresco_release_name: 201806-GA
 arkcase_admin_group: 'CN={{ ldap_prefix }}ARKCASE_ADMINISTRATOR,{{ ldap_group_base }}'
 arkcase_admin_password: '{{ default_user_password }}'
 arkcase_admin_user: '{{ ldap_prefix }}arkcase-admin'
-arkcase_config_server_version: '2020.13'
+arkcase_config_server_version: '2020.16'
 arkcase_configuration_classifier: foia
-arkcase_configuration_version: '2020.13'
+arkcase_configuration_version: '2020.16'
 arkcase_core_reports:
   - path: arkcase
     definition: ComplaintReport.prpt
@@ -80,7 +80,7 @@ arkcase_foia_reports:
 arkcase_host: '{{ internal_host }}'
 arkcase_host_name: '{{ arkcase_host }}'
 arkcase_retrieve_strategy: sftp
-arkcase_version: '2020.13'
+arkcase_version: '2020.16'
 arkcase_version_formatted: '{{ ''-'' ~ arkcase_version if arkcase_version != '''' else '''' }}'
 arkcase_webapp_supported_versions:
   - '-3.3.0'
@@ -370,7 +370,7 @@ sftp_pentaho_folder: /from-pentaho-ee
 sftp_pentaho_password: kie?Y3seev
 sftp_pentaho_user: pentaho-ee
 sftp_service_base_url: fileshare.armedia.com
-snowbound_arkcase_version: '2020.13'
+snowbound_arkcase_version: '2020.16'
 snowbound_arkcase_version_formatted: >-
   {{ '-' ~ snowbound_arkcase_version if snowbound_arkcase_version != '' else ''
   }}
@@ -403,3 +403,6 @@ ldap_portal_groups:
     name: '{{ ldap_prefix }}ARKCASE_PORTAL_USER'
     alfresco_role: SiteContributor
     alfresco_rma_role: Administrator
+foia_analytical_reports_version: '2020-09-08'
+foia_mondrian_schema_file: 'foiaSchema1.4.xml'
+arkcase_ee: true
