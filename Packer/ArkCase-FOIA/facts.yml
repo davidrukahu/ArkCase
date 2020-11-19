@@ -403,6 +403,6 @@ ldap_portal_groups:
     name: '{{ ldap_prefix }}ARKCASE_PORTAL_USER'
     alfresco_role: SiteContributor
     alfresco_rma_role: Administrator
-foia_analytical_reports_version: '2020-09-08'
+foia_analytical_reports_version: '2020.16'
 foia_mondrian_schema_file: 'foiaSchema1.4.xml'
 arkcase_ee: true
