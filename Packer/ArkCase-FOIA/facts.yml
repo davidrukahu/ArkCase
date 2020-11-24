@@ -393,7 +393,7 @@ ssl_version: TLSv1.2
 tomcat_major_version: 9
 tomcat_version: 9.0.22
 
-# Fabrice 20201103
+ldap_type: samba
 ldap_portal_group_no_base: "OU=PortalGroups,OU=ArkCase"
 ldap_portal_user_no_base: "OU=UsersPortal,OU=ArkCase"
 ldap_user_prefix_foia_portal: "{{ ldap_prefix }}portal."
