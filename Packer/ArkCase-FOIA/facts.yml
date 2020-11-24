@@ -223,7 +223,6 @@ mariadb_host: '{{ internal_host }}'
 mariadb_jdbc_version: 2.2.6
 mariadb_log_folder: '{{ root_folder }}/log/mariadb'
 pentaho_ce_checksum: 'sha1:3a27d54998f5001e0fd4cf843b727b0a127c7867'
-pentaho_ee_license_year: 2019
 pentaho_host: '{{ internal_host }}'
 pentaho_major_version: 8.3
 pentaho_minor_version: 0.0-371
